@@ -13,20 +13,34 @@ Compatible with Windows 10 and 11.
 
 param()
 
-function Prompt-Credentials {
+[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+
+function Prompt-Input {
     param(
         [string]$Prompt
     )
     Write-Host $Prompt -ForegroundColor Cyan
-    $cred = Read-Host
-    return $cred
+    Read-Host
+}
+
+function Confirm-Choice {
+    param(
+        [string]$Message
+    )
+    do {
+        $ans = Read-Host "$Message [Y/N]"
+    } while ($ans -notmatch '^[YyNn]$')
+    return ($ans -match '^[Yy]$')
 }
 
 function Get-CandidateFiles {
     param([string[]]$Paths)
     $threshold = (Get-Date).AddDays(-90)
-    $files = Get-ChildItem -Path $Paths -Recurse -File -ErrorAction SilentlyContinue
-    $candidates = $files | Where-Object { $_.LastAccessTime -lt $threshold }
+    $files = Get-ChildItem -Path $Paths -Recurse -Force -File -ErrorAction SilentlyContinue
+    $candidates = foreach ($f in $files) {
+        $last = if ($f.LastAccessTime -and $f.LastAccessTime -gt [datetime]::MinValue) { $f.LastAccessTime } else { $f.LastWriteTime }
+        if ($last -lt $threshold) { $f }
+    }
     return $candidates
 }
 
@@ -135,8 +149,9 @@ function Get-InstalledPrograms {
                     [void][datetime]::TryParseExact($_.InstallDate,'yyyyMMdd',$null,[System.Globalization.DateTimeStyles]::None,[ref]$instDate)
                 }
                 [pscustomobject]@{
-                    DisplayName    = $_.DisplayName
-                    InstallDate    = $instDate
+                    DisplayName     = $_.DisplayName
+                    DisplayVersion  = $_.DisplayVersion
+                    InstallDate     = $instDate
                     InstallLocation = $_.InstallLocation
                     UninstallString = $_.UninstallString
                 }
@@ -148,8 +163,8 @@ function Get-InstalledPrograms {
 function Show-Menu {
     Write-Host "==== Cleanup Assistant ====" -ForegroundColor Green
     Write-Host "This script will analyze your files and suggest cleanup actions."
-    $global:OpenAIKey = Prompt-Credentials "Enter OpenAI API key"
-    $global:OneDrivePath = Prompt-Credentials "Enter path to your OneDrive sync folder"
+    $global:OpenAIKey = Prompt-Input "Enter OpenAI API key"
+    $global:OneDrivePath = Prompt-Input "Enter path to your OneDrive sync folder"
 }
 
 function Start-Cleanup {
@@ -162,23 +177,28 @@ function Start-Cleanup {
     foreach ($dup in $dupes) {
         Write-Host "Duplicate group $($dup.Hash):" -ForegroundColor Magenta
         $dup.Files | ForEach-Object { Write-Host "  $_" }
+        if (Confirm-Choice "Delete all but the first file in this group?") {
+            $dup.Files | Select-Object -Skip 1 | ForEach-Object { Remove-Item $_.FullName -Force }
+        }
     }
 
     foreach ($file in $candidates) {
         $decision = Invoke-OpenAICategorization -File $file -ApiKey $OpenAIKey
+        $msg = "AI suggests $decision for $($file.FullName). Proceed?"
+        if (-not (Confirm-Choice $msg)) { continue }
         switch ($decision) {
             'DELETE' {
-                Write-Host "Deleting $($file.FullName)" -ForegroundColor Red
                 Remove-Item -Path $file.FullName -Force
+                Write-Host "Deleted $($file.FullName)" -ForegroundColor Red
             }
             'ARCHIVE' {
                 $dest = Join-Path $OneDrivePath 'Archive'
                 New-Item -ItemType Directory -Path $dest -Force | Out-Null
-                Write-Host "Archiving $($file.FullName) to $dest" -ForegroundColor Cyan
                 Move-Item -Path $file.FullName -Destination $dest -Force
+                Write-Host "Archived $($file.FullName)" -ForegroundColor Cyan
             }
             default {
-                Write-Host "Keeping $($file.FullName)" -ForegroundColor Gray
+                Write-Host "Kept $($file.FullName)" -ForegroundColor Gray
             }
         }
     }
@@ -189,8 +209,10 @@ function Start-Cleanup {
         if ($prog.InstallDate -and $prog.InstallDate.AddDays(180) -lt (Get-Date)) {
             $decision = Invoke-OpenAIProgramCategorization -Program $prog -ApiKey $OpenAIKey
             if ($decision -eq 'DELETE') {
-                Export-AppConfig -AppName $prog.DisplayName -TargetDir $OneDrivePath
-                Write-Host "Please uninstall $($prog.DisplayName) manually." -ForegroundColor Red
+                if (Confirm-Choice "Archive settings and remove $($prog.DisplayName)?") {
+                    Export-AppConfig -AppName $prog.DisplayName -TargetDir $OneDrivePath
+                    Write-Host "Please uninstall $($prog.DisplayName) manually." -ForegroundColor Red
+                }
             }
         }
     }

@@ -16,6 +16,6 @@ This repository provides PowerShell utilities. `CleanupAssistant.ps1` scans comm
 powershell -ExecutionPolicy Bypass -File .\CleanupAssistant.ps1
 ```
 
-You will be prompted to enter your OpenAI API key and the path to your OneDrive folder. The script will then scan `Documents`, `Downloads`, and `Desktop` for files not accessed in 90 days. For each candidate file the OpenAI API is called to suggest **DELETE**, **ARCHIVE**, or **KEEP**. Archived files are moved to `Archive` under the OneDrive folder. Any installed programs that appear unused for six months are suggested for removal with their configuration copied to OneDrive.
+When run, you are prompted for your OpenAI API key and the path to your OneDrive folder.  The assistant scans `Documents`, `Downloads`, and `Desktop` for files not accessed in 90 days.  Each file is evaluated with the OpenAI API and you can confirm whether to delete, archive, or keep it.  Duplicates are displayed so you can remove extras.  Archived files are moved to an `Archive` directory under your OneDrive folder.  Programs that appear unused for six months are flagged and you can choose to export their configuration to OneDrive before uninstalling them manually.
 
 After the run, review the OneDrive folder for exported application settings and README files with instructions on restoring them.
