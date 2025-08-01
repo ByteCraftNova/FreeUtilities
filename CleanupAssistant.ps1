@@ -20,7 +20,7 @@ function Prompt-Input {
         [string]$Prompt
     )
     Write-Host $Prompt -ForegroundColor Cyan
-    Read-Host
+    return (Read-Host).Trim()
 }
 
 function Confirm-Choice {
