@@ -177,6 +177,29 @@ function CheckFirewallRules {
     }
 }
 
+function ReviewOpenFirewallPorts {
+    Log "Reviewing inbound firewall rules for open ports..."
+    $inbound = Get-NetFirewallRule -Direction Inbound -Action Allow -Enabled True
+    foreach ($rule in $inbound) {
+        $filters = Get-NetFirewallPortFilter -AssociatedNetFirewallRule $rule -ErrorAction SilentlyContinue
+        foreach ($f in $filters) {
+            if ($f.LocalPort -and $f.LocalPort -ne 'Any') {
+                $msg = "Port $($f.LocalPort)/$($f.Protocol) allowed by rule '$($rule.DisplayName)'."
+                Log $msg
+                Write-Host $msg
+                Write-Host "Keeping unnecessary ports open can expose your system to remote attacks."
+                $resp = Read-Host "Disable this firewall rule to close the port? (Y/N)"
+                if ($resp -match '^[Yy]') {
+                    Set-NetFirewallRule -Name $rule.Name -Enabled False -ErrorAction SilentlyContinue
+                    Log "Disabled firewall rule $($rule.DisplayName) for port $($f.LocalPort)."
+                } else {
+                    Log "User kept firewall rule $($rule.DisplayName) for port $($f.LocalPort)."
+                }
+            }
+        }
+    }
+}
+
 function CheckEventLogs {
     Log "Recent security events (process creation)..."
     $events = Get-WinEvent -FilterHashtable @{LogName='Security';ID=4688;StartTime=(Get-Date).AddDays(-1)} -ErrorAction SilentlyContinue
@@ -198,6 +221,7 @@ CheckServices
 CheckHostsFile
 CheckNetworkConnections
 CheckFirewallRules
+ReviewOpenFirewallPorts
 CheckEventLogs
 
 Log "Spyware scan completed. Results saved to $logPath"
