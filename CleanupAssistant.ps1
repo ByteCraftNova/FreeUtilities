@@ -147,7 +147,16 @@ function Get-InstalledPrograms {
                 $instDate = $null
                 if ($_.InstallDate -and $_.InstallDate -match '^\d{8}$') {
                     $rawDate = [string]$_.InstallDate
-                    [void][datetime]::TryParseExact($rawDate,'yyyyMMdd',$null,[System.Globalization.DateTimeStyles]::None,[ref]$instDate)
+                    try {
+                        $instDate = [datetime]::ParseExact(
+                            $rawDate,
+                            'yyyyMMdd',
+                            [System.Globalization.CultureInfo]::InvariantCulture,
+                            [System.Globalization.DateTimeStyles]::None
+                        )
+                    } catch {
+                        $instDate = $null
+                    }
                 }
                 [pscustomobject]@{
                     DisplayName     = $_.DisplayName
